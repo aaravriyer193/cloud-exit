@@ -1,0 +1,6 @@
+name = "cloud-exit"
+main = "src/worker.js"
+compatibility_date = "2025-06-01"
+
+# UUID and WS_PATH are NOT stored here on purpose — they are secrets.
+# deploy.sh pushes them with `wrangler secret put`.

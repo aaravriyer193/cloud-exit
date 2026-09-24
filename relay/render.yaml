@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: cloud-exit-relay
+    runtime: node
+    plan: free
+    rootDir: relay
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: RELAY_TOKEN
+        generateValue: true

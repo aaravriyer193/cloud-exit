@@ -1,0 +1,13 @@
+{
+  "name": "cloud-exit",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "deploy": "./deploy.sh",
+    "dev": "wrangler dev",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "wrangler": "^4"
+  }
+}
