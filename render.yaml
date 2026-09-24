@@ -6,6 +6,7 @@ services:
     rootDir: relay
     buildCommand: npm install
     startCommand: node server.js
+    healthCheckPath: /
     envVars:
       - key: RELAY_TOKEN
         generateValue: true
