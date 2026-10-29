@@ -83,14 +83,28 @@ function handleTunnel(request, userID, env) {
   return new Response(null, { status: 101, webSocket: client });
 }
 
-/** Direct TCP, falling back to the relay when Cloudflare refuses the socket. */
+// Public NAT64 gateways, fastest first. Workers can't open sockets to Cloudflare IPs,
+// but they can reach these, which translate an embedded IPv4 back out. Lets the VPN reach
+// Cloudflare-fronted sites (ChatGPT, X, Discord...). Traffic stays end-to-end TLS from
+// your device, so a gateway only sees encrypted bytes and the destination.
+const NAT64_PREFIXES = ['2a01:4f9:c010:3f02:64::', '2602:fc59:11:64::', '2602:fc59:b0:64::'];
+const DIAL_TIMEOUT_MS = 4000;
+
+/** Direct TCP, then NAT64 for Cloudflare-hosted destinations, then the optional relay. */
 async function dial(head, env) {
   try {
-    const socket = connect({ hostname: head.address, port: head.port });
-    await socket.opened;
-    return { kind: 'tcp', socket };
-  } catch (err) {
-    if (!env.RELAY_URL || !env.RELAY_TOKEN) throw err;
+    return { kind: 'tcp', socket: await openSocket(head.address, head.port) };
+  } catch (directErr) {
+    const ipv4 = await toIPv4(head.address).catch(() => null);
+    if (ipv4) {
+      for (const prefix of NAT64_PREFIXES) {
+        try {
+          const socket = await openSocket(`[${embedIPv4(prefix, ipv4)}]`, head.port);
+          return { kind: 'tcp', socket };
+        } catch {}
+      }
+    }
+    if (!env.RELAY_URL || !env.RELAY_TOKEN) throw directErr;
     const u = new URL(env.RELAY_URL);
     u.searchParams.set('host', head.address);
     u.searchParams.set('port', String(head.port));
@@ -100,6 +114,40 @@ async function dial(head, env) {
     res.webSocket.accept();
     return { kind: 'relay', ws: res.webSocket };
   }
+}
+
+async function openSocket(hostname, port) {
+  const socket = connect({ hostname, port });
+  let timer;
+  try {
+    await Promise.race([
+      socket.opened,
+      new Promise((_, rej) => (timer = setTimeout(() => rej(new Error('dial timeout')), DIAL_TIMEOUT_MS))),
+    ]);
+    return socket;
+  } catch (err) {
+    try { socket.close(); } catch {}
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function toIPv4(address) {
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(address)) return address;
+  if (address.includes(':')) return null; // IPv6 literal: nothing to embed
+  const r = await fetch(`https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(address)}&type=A`, {
+    headers: { accept: 'application/dns-json' },
+  });
+  const j = await r.json();
+  const a = (j.Answer || []).find((x) => x.type === 1);
+  return a ? a.data : null;
+}
+
+function embedIPv4(prefix, ipv4) {
+  const p = ipv4.split('.').map(Number);
+  const h = (a, b) => ((a << 8) | b).toString(16);
+  return prefix + h(p[0], p[1]) + ':' + h(p[2], p[3]);
 }
 
 function relayToWs(relay, ws, ack) {

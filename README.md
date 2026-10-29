@@ -50,11 +50,13 @@ All three verified locally against `wrangler dev`.
   request. Time spent waiting on the network is not CPU, so normal browsing fits fine.
 - **UDP is DNS-only.** Everything else is TCP. So: web, APIs, streaming, SSH all work.
   WebRTC and most multiplayer game traffic do not.
-- **Sites behind Cloudflare DO fail** — confirmed by testing against the live worker.
-  Workers cannot open sockets back into Cloudflare's own network. Verified results:
-  YouTube, Instagram, TikTok and Google work; Discord, OpenAI, Medium and example.com
-  do not. Roughly a fifth of the web sits behind Cloudflare. Fixing this needs a relay
-  host outside Cloudflare — see "Relay" below.
+- **Cloudflare-hosted sites go out through a public NAT64 gateway.** Workers can't open
+  sockets to Cloudflare IPs, so for those sites (ChatGPT, X, Discord, Medium...) the
+  Worker dials the same IPv4 wrapped in a NAT64 IPv6 address instead. Your device's TLS
+  is end-to-end, so the gateway only sees encrypted bytes and which site you're visiting.
+  Those sites see a Finnish IP (the gateway); everything else sees a Cloudflare IP.
+  The gateways are volunteer-run; three are configured as fallbacks. If all three die,
+  only Cloudflare-hosted sites break. Prefixes live in `NAT64_PREFIXES` in the worker.
 - **`workers.dev` is itself blocked on some restrictive networks**, since it's a
   well-known bypass domain. If that happens, put a custom domain in front of the worker
   (Workers Routes) — costs a domain, nothing else.
